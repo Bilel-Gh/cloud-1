@@ -1,0 +1,21 @@
+---
+- name: Configure WordPress Server
+  hosts: webservers
+  become: yes
+  vars:
+    mysql_root_password: "{{ vault_mysql_root_password }}"
+    mysql_database: "wordpress"
+    mysql_user: "wordpress"
+    mysql_password: "{{ vault_mysql_password }}"
+    wordpress_site_title: "Mon Site Cloud-1"
+    wordpress_admin_user: "admin"
+    wordpress_admin_password: "{{ vault_wordpress_admin_password }}"
+    wordpress_admin_email: "admin@example.com"
+    certbot_email: "admin@example.com" # email pour certif j'ai mis un faux email
+    domain_nip: "{{ ansible_host }}.nip.io"
+
+  roles:
+    - common
+    - docker
+    - wordpress
+    - nginx

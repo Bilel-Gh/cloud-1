@@ -1,0 +1,81 @@
+---
+- name: Create directories for Docker Compose and persistent data
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /home/ubuntu/wordpress
+    - /home/ubuntu/wordpress/mysql_data
+    - /home/ubuntu/wordpress/wordpress_data
+
+- name: Copy Docker Compose file
+  template:
+    src: docker-compose.yml.j2
+    dest: /home/ubuntu/wordpress/docker-compose.yml
+    mode: '0644'
+
+- name: Deploy with Docker Compose
+  community.docker.docker_compose_v2:
+    project_src: /home/ubuntu/wordpress
+    state: present
+
+- name: Wait for MySQL to be ready
+  shell: >
+    docker exec mysql mysqladmin ping -h mysql -u {{ mysql_user }} -p{{ mysql_password }} --wait=30
+  register: mysql_ready
+  retries: 10
+  delay: 5
+  until: mysql_ready.rc == 0
+  ignore_errors: true
+  changed_when: false
+
+- name: Check if WordPress database is initialized
+  shell: >
+    docker exec mysql mysql -h mysql -u {{ mysql_user }} -p{{ mysql_password }} -e "SHOW DATABASES;" | grep -q {{ mysql_database }}
+  register: wp_db_exists
+  changed_when: false
+  ignore_errors: yes
+
+- name: Check for WordPress tables if database exists
+  shell: >
+    docker exec mysql mysql -h mysql -u {{ mysql_user }} -p{{ mysql_password }} -e "SHOW TABLES FROM {{ mysql_database }};" | grep -q wp_options
+  register: wp_tables_exist
+  changed_when: false
+  ignore_errors: yes
+  when: wp_db_exists is succeeded
+
+- name: Set fact about WordPress installation status
+  set_fact:
+    wordpress_is_installed: "{{ wp_db_exists is succeeded and wp_tables_exist is succeeded }}"
+
+- name: Wait for WordPress to be ready
+  ansible.builtin.shell: |
+    timeout 300 bash -c 'until docker exec wordpress curl -s http://localhost:80 > /dev/null; do echo "Waiting for WordPress..."; sleep 5; done'
+  changed_when: false
+
+- name: Install WP-CLI in WordPress container
+  ansible.builtin.shell: |
+    docker exec wordpress curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+    docker exec wordpress chmod +x wp-cli.phar
+    docker exec wordpress mv wp-cli.phar /usr/local/bin/wp
+    touch /home/ubuntu/wordpress/.wp-cli-installed
+  args:
+    creates: /home/ubuntu/wordpress/.wp-cli-installed
+  register: wp_cli_install
+
+- name: Configure WordPress automatically (if not already configured)
+  shell: >
+    docker exec wordpress wp core install --allow-root
+    --url=http://{{ ansible_host }}
+    --title="{{ wordpress_site_title | default('Mon site WordPress') }}"
+    --admin_user="{{ wordpress_admin_user | default('admin') }}"
+    --admin_password="{{ wordpress_admin_password | default(vault_wordpress_admin_password) }}"
+    --admin_email="{{ wordpress_admin_email | default('admin@example.com') }}"
+    --skip-email
+  when: not wordpress_is_installed
+
+- name: Install and activate a WordPress theme with better visuals
+  shell: >
+    docker exec wordpress wp theme install astra --allow-root --activate
+  when: not wordpress_is_installed

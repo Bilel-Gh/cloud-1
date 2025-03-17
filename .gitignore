@@ -35,3 +35,8 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+
+ssh_key_cloud1
+ssh_key_cloud1.pub
+terraform.tfvars
+ansible/group_vars/all/vault.yml

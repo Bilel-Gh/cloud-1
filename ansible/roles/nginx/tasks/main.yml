@@ -1,0 +1,24 @@
+---
+# Génération du certificat SSL
+- name: Create directory for SSL certificates
+  file:
+    path: /home/ubuntu/wordpress/certs
+    state: directory
+    mode: '0755'
+
+- name: Generate self-signed certificate
+  shell: |
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout /home/ubuntu/wordpress/certs/privkey.pem \
+      -out /home/ubuntu/wordpress/certs/fullchain.pem \
+      -subj "/CN={{ ansible_host }}"
+  args:
+    creates: /home/ubuntu/wordpress/certs/fullchain.pem
+
+# Configuration Nginx avec une seule configuration SSL
+- name: Copy Nginx configuration
+  template:
+    src: nginx.conf.j2
+    dest: /home/ubuntu/wordpress/nginx_conf/default.conf
+    mode: '0644'
+  notify: restart nginx
